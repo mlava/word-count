@@ -1,6 +1,16 @@
 This extension allows you to calculate the word count for any page or block selection.
 
-NEW:
+**New:**
+- Smarter Selection Detection
+
+Word Count now automatically detects the correct “mode” based on how you selected text or blocks:
+- Text highlighting inside a single block → counts only the highlighted text
+- Checkbox multiselect → counts across all selected blocks
+- Drag multiselect (blue highlight) → fully supported and counted
+- Context menu → “Word Count (selected blocks)” → counts exactly what you’ve selected
+- Command palette hotkey → intelligently decides based on real selection state
+
+*Previously*:
 - added support for multiselect contect menu (right-click, Plugins, Word Count (selected blocks))
 - added support for Chinese, Japanese and Korean ideographs. Thanks [@aka-phrankie](https://github.com/aka-phrankie)
 - now compatible with the new user-defined hotkeys function - see Hotkeys option in Roam Research Settings
