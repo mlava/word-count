@@ -18,6 +18,41 @@ export default {
       label: "Word Count (selected blocks)",
       callback: (e) => getSelectionText(e, true, false),
     });
+
+    // Extension Tools API
+    window.RoamExtensionTools = window.RoamExtensionTools || {};
+    window.RoamExtensionTools["word-count"] = {
+      name: "Word Count",
+      version: "1.0",
+      tools: [
+        {
+          name: "wc_get_page_count",
+          description:
+            "Count the total words on a Roam page. Uses the current page if no title provided. Always call fresh; results depend on the currently focused page and change on navigation.",
+          parameters: {
+            type: "object",
+            properties: {
+              page_title: {
+                type: "string",
+                description:
+                  "Page title to count. Omit to use the currently open page.",
+              },
+            },
+          },
+          execute: async ({ page_title } = {}) => {
+            try {
+              const result = await getPageWordCount(page_title);
+              if (!result) {
+                return { error: "Could not determine the page to count." };
+              }
+              return result;
+            } catch (err) {
+              return { error: err.message || "Word count failed." };
+            }
+          },
+        },
+      ],
+    };
   },
   onunload: () => {
     window.roamAlphaAPI.ui.blockContextMenu.removeCommand({
@@ -26,35 +61,9 @@ export default {
     window.roamAlphaAPI.ui.msContextMenu.removeCommand({
       label: "Word Count (selected blocks)",
     });
+    delete window.RoamExtensionTools?.["word-count"];
   },
 };
-
-function getDragSelectedBlockUidsFromDom() {
-  if (typeof document === "undefined") return [];
-
-  const containers = Array.from(
-    document.querySelectorAll(
-      ".roam-block-container.block-highlight-blue, .roam-block-container.block-highlight"
-    )
-  );
-
-  return containers
-    .map((c) => {
-      const input = c.querySelector(".rm-block__input");
-      if (!input?.id) return null;
-      return getUidFromInputId(input.id);
-    })
-    .filter(Boolean);
-}
-
-function getUidFromInputId(id) {
-  // Prefer a regex that captures the last 9 UID-like characters
-  // (alphanumeric or hyphen), but fall back to simple slice if needed.
-  const match = id.match(/([A-Za-z0-9_-]{9})$/);
-  if (match) return match[1];
-  
-  return id.slice(-9);
-}
 
 async function getSelectionText(e, msMode, textMode) {
   let text = "";
@@ -151,9 +160,9 @@ async function getSelectionText(e, msMode, textMode) {
 
       // Palette path: if individualMultiselect is empty, try drag-selection too
       if (uids.length === 0) {
-        const dragUids = getDragSelectedBlockUidsFromDom();
-        if (dragUids.length > 0) {
-          uids = dragUids;
+        const selected = await window.roamAlphaAPI.ui.multiselect?.getSelected?.();
+        if (selected?.length > 0) {
+          uids = selected.map((b) => b["block-uid"]);
         }
       }
 
@@ -231,52 +240,52 @@ async function getSelectionText(e, msMode, textMode) {
   });
 }
 
-async function wordCount(selected) {
-  let wordCount = 0;
-  let startBlock;
-  const focused = await window.roamAlphaAPI.ui.getFocusedBlock();
-  startBlock = focused?.["block-uid"];
+async function getPageWordCount(explicitTitle) {
+  let pageTitle = explicitTitle || null;
 
-  let pageTitle;
+  if (!pageTitle) {
+    let startBlock;
+    const focused = await window.roamAlphaAPI.ui.getFocusedBlock();
+    startBlock = focused?.["block-uid"];
 
-  if (startBlock == undefined) {
-    startBlock = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
-    if (startBlock == null) {
-      // probably roam.log page
-      const uri = window.location.href;
-      const regex = /^https:\/\/roamresearch.com\/.+\/(app|offline)\/\w+$/; // log page
-      if (regex.test(uri)) {
-        // definitely a log page, so get the corresponding page uid
-        const today = new Date();
-        const dd = String(today.getDate()).padStart(2, "0");
-        const mm = String(today.getMonth() + 1).padStart(2, "0");
-        const yyyy = today.getFullYear();
-        startBlock = mm + "-" + dd + "-" + yyyy;
+    if (startBlock == undefined) {
+      startBlock = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
+      if (startBlock == null) {
+        // probably roam.log page
+        const uri = window.location.href;
+        const regex = /^https:\/\/roamresearch.com\/.+\/(app|offline)\/\w+$/;
+        if (regex.test(uri)) {
+          const today = new Date();
+          const dd = String(today.getDate()).padStart(2, "0");
+          const mm = String(today.getMonth() + 1).padStart(2, "0");
+          const yyyy = today.getFullYear();
+          startBlock = mm + "-" + dd + "-" + yyyy;
+          const q = `[:find (pull ?page [:node/title]) :where [?page :block/uid "${startBlock}"] ]`;
+          const results = await window.roamAlphaAPI.q(q);
+          pageTitle = results[0][0].title;
+        }
+      } else {
         const q = `[:find (pull ?page [:node/title]) :where [?page :block/uid "${startBlock}"] ]`;
         const results = await window.roamAlphaAPI.q(q);
         pageTitle = results[0][0].title;
       }
     } else {
-      const q = `[:find (pull ?page [:node/title]) :where [?page :block/uid "${startBlock}"] ]`;
-      const results = await window.roamAlphaAPI.q(q);
-      pageTitle = results[0][0].title;
+      const blockUIDList = ["" + startBlock + ""];
+      const rule =
+        "[[ (ancestor ?b ?a) [?a :block/children ?b] ] [ (ancestor ?b ?a) [?parent :block/children ?b] (ancestor ?parent ?a) ]]";
+      const query = `[:find  (pull ?block [:block/uid :block/string])(pull ?page [:node/title :block/uid]) :in $ [?block_uid_list ...] % :where [?block :block/uid ?block_uid_list] [?page :node/title] (ancestor ?block ?page)]`;
+      const results = await window.roamAlphaAPI.q(query, blockUIDList, rule);
+      pageTitle = results[0][1].title;
     }
-  } else {
-    // get page title
-    const blockUIDList = ["" + startBlock + ""];
-    const rule =
-      "[[ (ancestor ?b ?a) [?a :block/children ?b] ] [ (ancestor ?b ?a) [?parent :block/children ?b] (ancestor ?parent ?a) ]]";
-    const query = `[:find  (pull ?block [:block/uid :block/string])(pull ?page [:node/title :block/uid]) :in $ [?block_uid_list ...] % :where [?block :block/uid ?block_uid_list] [?page :node/title] (ancestor ?block ?page)]`;
-    const results = await window.roamAlphaAPI.q(query, blockUIDList, rule);
-    pageTitle = results[0][1].title;
   }
 
-  // get words in blocks on page
+  if (!pageTitle) return null;
+
   const ancestorrule =
     "[[ (ancestor ?b ?a) [?a :block/children ?b] ] [ (ancestor ?b ?a) [?parent :block/children ?b] (ancestor ?parent ?a) ]]";
   const blocks = await window.roamAlphaAPI.q(
-    `[:find ?string :in $ ?pagetitle % 
-      :where 
+    `[:find ?string :in $ ?pagetitle %
+      :where
         [?block :block/string ?string]
         [?page :node/title ?pagetitle]
         (ancestor ?block ?page)]`,
@@ -284,13 +293,31 @@ async function wordCount(selected) {
     ancestorrule
   );
 
+  let count = 0;
   for (let i = 0; i < blocks.length; i++) {
-    const CJK = countWordsWithCJKSupport(blocks[i][0].toString());
-    wordCount = wordCount + CJK;
+    count += countWordsWithCJKSupport(blocks[i][0].toString());
   }
 
-  let toast = "";
-  toast += wordCount + " words on this page";
+  return { page_title: pageTitle, word_count: count };
+}
+
+async function wordCount(selected) {
+  const result = await getPageWordCount();
+
+  if (!result) {
+    iziToast.show({
+      theme: "dark",
+      message: "Could not determine the current page",
+      position: "center",
+      close: false,
+      timeout: 4000,
+      closeOnClick: true,
+      displayMode: 2,
+    });
+    return;
+  }
+
+  let toast = result.word_count + " words on this page";
   if (selected) {
     toast += "<BR><BR>(no selection; counted the whole page)";
   }
