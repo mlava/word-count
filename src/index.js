@@ -29,6 +29,7 @@ export default {
           name: "wc_get_page_count",
           description:
             "Count the total words on a Roam page. Uses the current page if no title provided. Always call fresh; results depend on the currently focused page and change on navigation.",
+          readOnly: true,
           parameters: {
             type: "object",
             properties: {
