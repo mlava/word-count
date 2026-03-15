@@ -28,7 +28,7 @@ export default {
         {
           name: "wc_get_page_count",
           description:
-            "Count the total words on a Roam page. Uses the current page if no title provided. Always call fresh; results depend on the currently focused page and change on navigation.",
+            "Count the total words and characters on a Roam page. Uses the current page if no title provided. Always call fresh; results depend on the currently focused page and change on navigation.",
           readOnly: true,
           parameters: {
             type: "object",
@@ -216,18 +216,18 @@ async function getSelectionText(e, msMode, textMode) {
   }
 
   wordsCount = countWordsWithCJKSupport(text.toString());
+  const charCount = text.length;
 
   // Build a context-aware message
   let message;
   if (mode === "dom-selection") {
-    message = `${wordsCount} words in selected text`;
+    message = `${wordsCount} words | ${charCount} characters in selected text`;
   } else if (mode === "multi-block") {
-    message = `${wordsCount} words across ${blockCount} blocks`;
+    message = `${wordsCount} words | ${charCount} characters across ${blockCount} blocks`;
   } else if (mode === "single-block") {
-    message = `${wordsCount} words in this block`;
+    message = `${wordsCount} words | ${charCount} characters in this block`;
   } else {
-    // Fallback if something unexpected happens
-    message = `${wordsCount} words in selected text`;
+    message = `${wordsCount} words | ${charCount} characters in selected text`;
   }
 
   iziToast.show({
@@ -295,11 +295,14 @@ async function getPageWordCount(explicitTitle) {
   );
 
   let count = 0;
+  let charCount = 0;
   for (let i = 0; i < blocks.length; i++) {
-    count += countWordsWithCJKSupport(blocks[i][0].toString());
+    const s = blocks[i][0].toString();
+    count += countWordsWithCJKSupport(s);
+    charCount += s.length;
   }
 
-  return { page_title: pageTitle, word_count: count };
+  return { page_title: pageTitle, word_count: count, char_count: charCount };
 }
 
 async function wordCount(selected) {
@@ -318,7 +321,7 @@ async function wordCount(selected) {
     return;
   }
 
-  let toast = result.word_count + " words on this page";
+  let toast = `${result.word_count} words | ${result.char_count} characters on this page`;
   if (selected) {
     toast += "<BR><BR>(no selection; counted the whole page)";
   }
