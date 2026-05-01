@@ -252,23 +252,17 @@ async function getPageWordCount(explicitTitle) {
     if (startBlock == undefined) {
       startBlock = await window.roamAlphaAPI.ui.mainWindow.getOpenPageOrBlockUid();
       if (startBlock == null) {
-        // probably roam.log page
-        const uri = window.location.href;
-        const regex = /^https:\/\/roamresearch.com\/.+\/(app|offline)\/\w+$/;
-        if (regex.test(uri)) {
-          const today = new Date();
-          const dd = String(today.getDate()).padStart(2, "0");
-          const mm = String(today.getMonth() + 1).padStart(2, "0");
-          const yyyy = today.getFullYear();
-          startBlock = mm + "-" + dd + "-" + yyyy;
-          const q = `[:find (pull ?page [:node/title]) :where [?page :block/uid "${startBlock}"] ]`;
-          const results = await window.roamAlphaAPI.q(q);
-          pageTitle = results[0][0].title;
-        }
-      } else {
+        // getOpenPageOrBlockUid() returns null on the daily notes log view.
+        // Read today's DNP UID from the topmost log page in the DOM — avoids
+        // URL-shape regex and timezone-sensitive date construction.
+        startBlock = document
+          .querySelector(".roam-log-page .rm-title-display-container[data-page-uid]")
+          ?.getAttribute("data-page-uid");
+      }
+      if (startBlock) {
         const q = `[:find (pull ?page [:node/title]) :where [?page :block/uid "${startBlock}"] ]`;
         const results = await window.roamAlphaAPI.q(q);
-        pageTitle = results[0][0].title;
+        pageTitle = results?.[0]?.[0]?.title || null;
       }
     } else {
       const blockUIDList = ["" + startBlock + ""];
